@@ -1,0 +1,25 @@
+# Archivo: pyproject.toml
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pypbtdcev"
+version = "0.1.0"
+authors = [
+  { name="Roberto Ruiz", email="roruizf@gmail.com" },
+]
+description = "Una librería para leer y escribir planillas de PBTD de Calificación Energética de Viviendas en Chile."
+requires-python = ">=3.8"
+dependencies = [
+    "pandas",
+    "openpyxl",
+    "numpy"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pypbtdcev = ["plantillas/*.xlsm"]
