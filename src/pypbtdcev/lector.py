@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import json
 
+
 # -------------------------------------------
 # --- 01.-PBTD-Datos-de-Arquitectura-v2.2 ---
 # -------------------------------------------
@@ -740,3 +741,358 @@ class LectorPBTD01_v2:
         hoja_dict['pisos_transmitancia'] = json.loads(json_string_pisos)
 
         return hoja_dict
+
+
+# ---------------------------------------------------
+# --- 03.-PBTD-Datos-de-Equipos-y-Resultados-v2.2 ---
+# ---------------------------------------------------
+
+class LectorPBTD03_v2(LectorPBTD01_v2):
+    def __init__(self, filepath):
+        super().__init__(filepath)
+
+    def _parse_all_sheets(self):
+        """
+        Orquestador principal para PBTD 03.
+        """
+        datos_completos = {}
+
+        # 1. CEV-CEVE (Heredado)
+        datos_completos['CEV-CEVE'] = self._parsear_hoja_cev_ceve()
+
+        # 2. Resumen (Dashboard completo)
+        datos_completos['Resumen'] = self._parsear_hoja_resumen()
+
+        # 3. Resultados (Tabla horaria)
+        datos_completos['Resultados'] = self._parsear_hoja_resultados()
+
+        # 4. Anexo Calculos (Pendiente para futuro)
+        datos_completos['Anexo Calculos'] = None
+
+        return datos_completos
+
+    def _limpiar_dict_recursivo(self, d):
+        """
+        Auxiliar para limpiar diccionarios anidados, convirtiendo NaN a None
+        y strings numéricos a float (manejando coma decimal).
+        """
+        if not isinstance(d, dict):
+            return d
+        
+        for k, v in d.items():
+            if isinstance(v, dict):
+                d[k] = self._limpiar_dict_recursivo(v)
+            elif pd.isna(v):
+                d[k] = None
+            else:
+                try:
+                    if isinstance(v, str):
+                        val_clean = v.replace(',', '.')
+                        d[k] = float(val_clean)
+                    else:
+                        d[k] = float(v)
+                except (ValueError, TypeError):
+                    d[k] = v
+        return d
+
+    def _parsear_hoja_resultados(self):
+        """
+        Lee la tabla horaria de la hoja 'Resultados'.
+        """
+        target_name = 'resultados'
+        sheet_found = None
+        
+        for sheet in self.xl_file_data.keys():
+            if target_name in sheet.lower().strip():
+                sheet_found = sheet
+                break
+        
+        if sheet_found is None:
+            print(f"❌ Error: No se encontró ninguna hoja que coincida con '{target_name}'")
+            return None
+
+        df = self.xl_file_data[sheet_found]
+
+        # Definir Rangos
+        col_start = 2  # Columna C
+        col_end = 61   # Columna BI (hasta 61 exclusivo)
+        header_row_idx = 4       # Fila 5 Excel
+        data_start_idx = 5       # Fila 6 Excel
+        data_end_idx = 3124      # Fila 3124 Excel
+
+        # Extraer Encabezados
+        try:
+            raw_headers = df.iloc[header_row_idx, col_start:col_end].tolist()
+            headers = []
+            IDX_AE = 30
+            IDX_BG = 58
+            
+            for i, h in enumerate(raw_headers):
+                current_global_idx = col_start + i
+                if current_global_idx == IDX_AE and (pd.isna(h) or str(h).strip() == ""):
+                    headers.append("Desconocido")
+                    continue
+                
+                if pd.isna(h):
+                    headers.append(f"col_{len(headers)}")
+                else:
+                    h_str = str(h).strip().lower()
+                    h_str = h_str.replace(' ', '_').replace('.', '').replace('\n', '')
+                    headers.append(h_str)
+        except IndexError:
+            return None
+
+        # Extraer Datos
+        try:
+            df_tabla = df.iloc[data_start_idx:data_end_idx, col_start:col_end].copy()
+            if len(df_tabla.columns) == len(headers):
+                df_tabla.columns = headers
+            else:
+                min_len = min(len(df_tabla.columns), len(headers))
+                df_tabla.columns = headers[:min_len] + [f"extra_{i}" for i in range(len(df_tabla.columns) - min_len)]
+        except IndexError:
+             return None
+
+        # Convertir a números (Excluyendo BG)
+        idx_relativo_bg = IDX_BG - col_start
+        cols_to_convert = list(df_tabla.columns)
+        if idx_relativo_bg < len(headers):
+            col_bg_name = headers[idx_relativo_bg]
+            if col_bg_name in cols_to_convert:
+                cols_to_convert.remove(col_bg_name)
+        
+        df_tabla = self._convertir_decimales_a_float(df_tabla, cols_to_convert)
+
+        try:
+            json_string = df_tabla.replace({np.nan: None}).to_json(orient='records')
+            return json.loads(json_string)
+        except Exception:
+            return None
+
+    def _parsear_hoja_resumen(self):
+        """
+        Lee la hoja 'Resumen' completa.
+        Incluye: Demanda, Confort, Consumos, Tablas Mensuales, Flujos.
+        """
+        sheet_name = None
+        for nombre in ['Resumen', 'Resultados', 'Resumen Resultados']:
+            if nombre in self.xl_file_data:
+                sheet_name = nombre
+                break
+        if sheet_name is None:
+            for hoja in self.xl_file_data.keys():
+                if "resumen" in hoja.lower():
+                    sheet_name = hoja
+                    break
+        
+        if sheet_name is None:
+            print("Aviso: No se encontró la hoja 'Resumen'.")
+            return None
+
+        df = self.xl_file_data[sheet_name]
+
+        # --- Estructuras Base ---
+        demanda_energetica = {}
+        confort_termico = {}
+        consumos = {}
+
+        # =================================================================
+        # 1. DEMANDA ENERGÉTICA
+        # =================================================================
+        try:
+            cols_indices = range(1, 9) 
+            nombres_cols = []
+            for col_idx in cols_indices:
+                partes = []
+                for row_idx in [3, 4, 5]:
+                    val = df.iat[row_idx, col_idx]
+                    if pd.notna(val): partes.append(str(val).strip())
+                nombre_limpio = "_".join(partes).lower()
+                nombre_limpio = (nombre_limpio.replace(' ', '_').replace('.', '').replace('[', '').replace(']', '')
+                                 .replace('-', '_').replace('/', '_por_').replace('%', 'porc').replace('__', '_'))
+                nombres_cols.append(nombre_limpio)
+
+            datos_base = {}
+            datos_propuesto = {}
+            for i, nombre in enumerate(nombres_cols):
+                col_abs = cols_indices[i]
+                datos_base[nombre] = df.iat[6, col_abs]
+                datos_propuesto[nombre] = df.iat[7, col_abs]
+
+            val_ahorro = df.iat[6, 9] if pd.notna(df.iat[6, 9]) else df.iat[7, 9]
+            val_letra = df.iat[6, 10] if pd.notna(df.iat[6, 10]) else df.iat[7, 10]
+
+            demanda_energetica = {
+                'tabla_demanda': {
+                    'caso_base': self._limpiar_dict_nan(datos_base),
+                    'caso_propuesto': self._limpiar_dict_nan(datos_propuesto)
+                },
+                'comparativa_casos': {
+                    'ahorro_total_porc': val_ahorro,
+                    'letra_calificacion': val_letra
+                }
+            }
+        except Exception: pass
+
+        # =================================================================
+        # 2. CONFORT TÉRMICO
+        # =================================================================
+        try:
+            cols_indices = range(1, 6)
+            nombres_cols = []
+            for col_idx in cols_indices:
+                partes = []
+                for row_idx in [10, 11, 12]: 
+                    val = df.iat[row_idx, col_idx]
+                    if pd.notna(val): partes.append(str(val).strip())
+                nombre_limpio = "_".join(partes).lower()
+                nombre_limpio = (nombre_limpio.replace(' ', '_').replace('.', '').replace('[', '').replace(']', '')
+                                 .replace('(', '').replace(')', '').replace('+', '_mas').replace('-', '_menos')
+                                 .replace('%', 'porc').replace('__', '_'))
+                nombres_cols.append(nombre_limpio)
+
+            datos_base = {}
+            datos_propuesto = {}
+            for i, nombre in enumerate(nombres_cols):
+                col_abs = cols_indices[i]
+                datos_base[nombre] = df.iat[13, col_abs]
+                datos_propuesto[nombre] = df.iat[14, col_abs]
+
+            confort_termico = {
+                'caso_base': self._limpiar_dict_nan(datos_base),
+                'caso_propuesto': self._limpiar_dict_nan(datos_propuesto)
+            }
+        except Exception: pass
+
+        # =================================================================
+        # 3. CONSUMOS
+        # =================================================================
+        try:
+            def _leer_par(fila_idx):
+                try:
+                    return {'kwh_ano': df.iat[fila_idx, 4], 'kwh_m2_ano': df.iat[fila_idx, 6]}
+                except IndexError: return {'kwh_ano': None, 'kwh_m2_ano': None}
+
+            solar_termica = {'aporte_calefaccion': _leer_par(22), 'aporte_acs': _leer_par(23)}
+            energia_primaria = {'calefaccion': _leer_par(26), 'acs': _leer_par(27), 'iluminacion': _leer_par(28), 'ventiladores': _leer_par(29)}
+            generacion_pv = {'generacion_total': _leer_par(31), 'aporte_consumos_basicos': _leer_par(32), 'aporte_consumos_electrodomesticos_o_red': _leer_par(33)}
+            balance = {'consumo_total_antes_pv': _leer_par(36), 'aporte_pv_consumos_basicos': _leer_par(37), 'consumos_basicos_a_suplir': _leer_par(38),
+                       'consumo_total_final': _leer_par(40), 'consumo_referencia': _leer_par(41),
+                       'indicadores': {'coeficiente_c': df.iat[42, 4], 'ahorro_total_porc': df.iat[42, 9]}}
+            pv_electro = {'aporte_kwh_ano': df.iat[45, 4], 'porcentaje_consumo_medio': df.iat[45, 6]}
+
+            consumos = {
+                '1_aporte_solar_termica': self._limpiar_dict_recursivo(solar_termica),
+                '2_consumos_energia_primaria_base': self._limpiar_dict_recursivo(energia_primaria),
+                '3_generacion_fotovoltaica': self._limpiar_dict_recursivo(generacion_pv),
+                '4_balance_general': self._limpiar_dict_recursivo(balance),
+                '5_aporte_pv_electrodomesticos': self._limpiar_dict_recursivo(pv_electro)
+            }
+        except Exception: pass
+
+        # =================================================================
+        # 4. TABLAS MENSUALES
+        # =================================================================
+        def _extraer_tabla_mensual(fila_inicio_excel, fila_fin_excel, limpieza_simple=False):
+            tabla = {}
+            meses_keys = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 
+                          'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+            start_idx = fila_inicio_excel - 1
+            end_idx = fila_fin_excel 
+            for row_idx in range(start_idx, end_idx):
+                try:
+                    raw_label = df.iat[row_idx, 13]
+                    if pd.isna(raw_label):
+                        label = f"fila_{row_idx}"
+                    else:
+                        label = str(raw_label).lower().strip()
+                        if limpieza_simple:
+                            label = (label.replace(' ', '_').replace('-', '_').replace(':', '')
+                                          .replace('(', '').replace(')', '').replace('+', '')
+                                          .replace('.', '').replace('ñ', 'n'))
+                        else:
+                            label = (label.replace(' ', '_').replace('°', '_deg').replace('+', '_mas')
+                                          .replace('-', '_menos').replace('.', '').replace('ñ', 'n'))
+                        while '__' in label: label = label.replace('__', '_')
+
+                    datos_fila = {}
+                    for m_idx, mes in enumerate(meses_keys):
+                        col_idx = 14 + m_idx
+                        val = df.iat[row_idx, col_idx]
+                        datos_fila[mes] = float(val) if pd.notna(val) else None
+                    val_total = df.iat[row_idx, 26]
+                    datos_fila['anual'] = float(val_total) if pd.notna(val_total) else None
+                    tabla[label] = datos_fila
+                except IndexError: continue
+            return tabla
+
+        tablas_mensuales = {}
+        try:
+            tablas_mensuales['1_demanda_calefaccion_comparativa'] = _extraer_tabla_mensual(7, 8, True)
+            tablas_mensuales['2_demanda_refrigeracion_comparativa'] = _extraer_tabla_mensual(9, 10, True)
+            tablas_mensuales['3_hd_mas_comparativa'] = _extraer_tabla_mensual(12, 13, True)
+            tablas_mensuales['4_hd_menos_comparativa'] = _extraer_tabla_mensual(14, 15, True)
+            tablas_mensuales['5_demanda_calefaccion_escenarios'] = _extraer_tabla_mensual(19, 23, False)
+            tablas_mensuales['6_demanda_refrigeracion_escenarios'] = _extraer_tabla_mensual(24, 28, False)
+            tablas_mensuales['7_hd_menos_escenarios'] = _extraer_tabla_mensual(30, 34, False)
+            tablas_mensuales['8_hd_mas_escenarios'] = _extraer_tabla_mensual(35, 39, False)
+        except Exception: pass
+
+        # =================================================================
+        # 5. FLUJOS
+        # =================================================================
+        def _extraer_tabla_flujos(col_idx_start, col_idx_end, row_idx_start, row_idx_end, tipo_fila='meses'):
+            tabla = {}
+            try:
+                headers = []
+                for c in range(col_idx_start, col_idx_end):
+                    val = df.iat[2, c]
+                    if pd.notna(val):
+                        h_str = str(val).strip().lower()
+                        h_str = (h_str.replace(' ', '_').replace('.', '')
+                                      .replace('[', '').replace(']', '')
+                                      .replace('(', '').replace(')', ''))
+                        headers.append(h_str)
+                    else:
+                        headers.append(f"col_{c}")
+
+                meses_keys = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 
+                              'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+                count = 0
+                for r in range(row_idx_start, row_idx_end):
+                    datos_fila = {}
+                    for i, header in enumerate(headers):
+                        val = df.iat[r, col_idx_start + i]
+                        if pd.isna(val):
+                            datos_fila[header] = None
+                        else:
+                            try:
+                                if isinstance(val, str): val = val.replace(',', '.')
+                                datos_fila[header] = float(val)
+                            except (ValueError, TypeError):
+                                datos_fila[header] = val
+                    
+                    if tipo_fila == 'meses':
+                        key = meses_keys[count] if count < len(meses_keys) else f"fila_{count+1}"
+                    else:
+                        key = f"hora_{count}"
+                    tabla[key] = datos_fila
+                    count += 1
+            except Exception: return {}
+            return tabla
+
+        flujos = {}
+        try:
+            flujos['1_promedio_mensual_climatizacion'] = _extraer_tabla_flujos(57, 73, 3, 15, 'meses')
+            flujos['2_diario_enero'] = _extraer_tabla_flujos(74, 90, 3, 27, 'horas')
+            flujos['3_diario_julio'] = _extraer_tabla_flujos(91, 107, 3, 27, 'horas')
+        except Exception: pass
+
+        # RETORNO FINAL
+        return {
+            'demanda_energetica': demanda_energetica,
+            'confort_termico': self._limpiar_dict_recursivo(confort_termico),
+            'consumos': consumos,
+            'tablas_mensuales': self._limpiar_dict_recursivo(tablas_mensuales),
+            'flujos': self._limpiar_dict_recursivo(flujos)
+        }
