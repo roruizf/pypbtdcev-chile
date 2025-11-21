@@ -766,8 +766,8 @@ class LectorPBTD03_v2(LectorPBTD01_v2):
         # 3. Resultados (Tabla horaria)
         datos_completos['Resultados'] = self._parsear_hoja_resultados()
 
-        # 4. Anexo Calculos (Pendiente para futuro)
-        datos_completos['Anexo Calculos'] = None
+        # 4. Anexo Cálculos (Pendiente para futuro)
+        datos_completos['Anexo Cálculos'] = None
 
         return datos_completos
 
@@ -909,7 +909,7 @@ class LectorPBTD03_v2(LectorPBTD01_v2):
                     if pd.notna(val): partes.append(str(val).strip())
                 nombre_limpio = "_".join(partes).lower()
                 nombre_limpio = (nombre_limpio.replace(' ', '_').replace('.', '').replace('[', '').replace(']', '')
-                                 .replace('-', '_').replace('/', '_por_').replace('%', 'porc').replace('__', '_'))
+                                 .replace('-', '_').replace('/', '_por_').replace('%', 'porc').replace('__', '_').replace('ñ', 'n'))
                 nombres_cols.append(nombre_limpio)
 
             datos_base = {}
@@ -975,7 +975,7 @@ class LectorPBTD03_v2(LectorPBTD01_v2):
 
             solar_termica = {'aporte_calefaccion': _leer_par(22), 'aporte_acs': _leer_par(23)}
             energia_primaria = {'calefaccion': _leer_par(26), 'acs': _leer_par(27), 'iluminacion': _leer_par(28), 'ventiladores': _leer_par(29)}
-            generacion_pv = {'generacion_total': _leer_par(31), 'aporte_consumos_basicos': _leer_par(32), 'aporte_consumos_electrodomesticos_o_red': _leer_par(33)}
+            generacion_pv = {'generacion_total': _leer_par(31), 'aporte_consumos_basicos': _leer_par(32), 'aporte_consumos_electrodomesticos_a_red': _leer_par(33)}
             balance = {'consumo_total_antes_pv': _leer_par(36), 'aporte_pv_consumos_basicos': _leer_par(37), 'consumos_basicos_a_suplir': _leer_par(38),
                        'consumo_total_final': _leer_par(40), 'consumo_referencia': _leer_par(41),
                        'indicadores': {'coeficiente_c': df.iat[42, 4], 'ahorro_total_porc': df.iat[42, 9]}}
