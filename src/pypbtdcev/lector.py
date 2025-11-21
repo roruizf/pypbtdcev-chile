@@ -837,7 +837,7 @@ class LectorPBTD03_v2(LectorPBTD01_v2):
                     headers.append(f"col_{len(headers)}")
                 else:
                     h_str = str(h).strip().lower()
-                    h_str = h_str.replace(' ', '_').replace('.', '').replace('\n', '')
+                    h_str = h_str.replace(' ', '_').replace('.', '').replace('\n', '').replace('ñ', 'n').replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u')
                     headers.append(h_str)
         except IndexError:
             return None
@@ -909,7 +909,7 @@ class LectorPBTD03_v2(LectorPBTD01_v2):
                     if pd.notna(val): partes.append(str(val).strip())
                 nombre_limpio = "_".join(partes).lower()
                 nombre_limpio = (nombre_limpio.replace(' ', '_').replace('.', '').replace('[', '').replace(']', '')
-                                 .replace('-', '_').replace('/', '_por_').replace('%', 'porc').replace('__', '_').replace('ñ', 'n'))
+                                  .replace('-', '_').replace('/', '_por_').replace('%', 'porc').replace('ñ', 'n').replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u').replace('__', '_'))
                 nombres_cols.append(nombre_limpio)
 
             datos_base = {}
@@ -1009,7 +1009,7 @@ class LectorPBTD03_v2(LectorPBTD01_v2):
                         if limpieza_simple:
                             label = (label.replace(' ', '_').replace('-', '_').replace(':', '')
                                           .replace('(', '').replace(')', '').replace('+', '')
-                                          .replace('.', '').replace('ñ', 'n'))
+                                          .replace('.', '').replace('ñ', 'n').replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u'))
                         else:
                             label = (label.replace(' ', '_').replace('°', '_deg').replace('+', '_mas')
                                           .replace('-', '_menos').replace('.', '').replace('ñ', 'n'))
@@ -1051,7 +1051,7 @@ class LectorPBTD03_v2(LectorPBTD01_v2):
                         h_str = str(val).strip().lower()
                         h_str = (h_str.replace(' ', '_').replace('.', '')
                                       .replace('[', '').replace(']', '')
-                                      .replace('(', '').replace(')', ''))
+                                      .replace('(', '').replace(')', '').replace('ñ', 'n').replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u'))
                         headers.append(h_str)
                     else:
                         headers.append(f"col_{c}")
