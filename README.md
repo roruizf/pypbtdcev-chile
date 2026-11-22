@@ -35,7 +35,7 @@ informe = to_pbtd01(vcev, "salida.xlsm")               # copia de la plantilla o
 assert comparar("ejemplos/01.-Ejamplo-1.xlsm", "salida.xlsm") == []
 ```
 
-- `to_pbtd01` exige la plantilla oficial empaquetada (SHA-256 `dec31e42…b5de9b`), conserva VBA, estilos y
+- `to_pbtd01` exige la plantilla oficial empaquetada (SHA-256 `dec31e42…b5de9b`), conserva VBA (si la plantilla lo trae), estilos y
   fórmulas, rechaza escribir sobre una fórmula y pide a Excel recalcular al abrir.
 - Una fórmula de usuario en una celda editable (p. ej. `=4.5*12.64`) se lee por su valor en caché y queda en
   `vcev.procedencia[campo].formula_usuario`; al escribir se escribe el valor, no la fórmula.
