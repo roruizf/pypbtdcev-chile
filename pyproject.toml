@@ -6,20 +6,36 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pypbtdcev"
-version = "0.1.0"
+version = "0.2.0"
 authors = [
   { name="Roberto Ruiz", email="roruizf@gmail.com" },
 ]
 description = "Una librería para leer y escribir planillas de PBTD de Calificación Energética de Viviendas en Chile."
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
     "pandas",
     "openpyxl",
-    "numpy"
+    "numpy",
+    "pydantic>=2.14,<3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.9",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-pypbtdcev = ["plantillas/*.xlsm"]
+pypbtdcev = ["plantillas/*.xlsm", "datos/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+extend-exclude = ["src/pypbtdcev/lector.py", "src/pypbtdcev/escritor.py", "pruebas"]
