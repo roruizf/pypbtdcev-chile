@@ -8,8 +8,9 @@ from openpyxl import load_workbook
 from openpyxl.utils import coordinate_to_tuple, get_column_letter
 from openpyxl.utils.datetime import to_excel
 
-from .celdas import cargar_celdas
-from .vcev import VCEV, Incidencia, Procedencia, asignar
+from . import xlsm_xml
+from .celdas import PLANTILLA_PBTD01, cargar_celdas
+from .vcev import VCEV, Incidencia, Procedencia, asignar, leer
 
 TIPOS_SIMPLES = (int, float, str)
 
@@ -97,3 +98,17 @@ def from_pbtd01(ruta) -> VCEV:
             libro_sha256=sha, hoja=c["hoja"], celda=c["celda"], formula_usuario=formula
         )
     return vcev
+
+
+def to_pbtd01(vcev: VCEV, destino, plantilla=PLANTILLA_PBTD01) -> dict:
+    """Escribe el VCEV en una copia de la plantilla oficial por edición del XML; devuelve el informe de preservación.
+
+    Escribe toda celda del mapeo cuyo valor no es None, y vacía las que la plantilla trae con valor. Las fórmulas
+    de usuario no se restauran: se escribe el valor (documentado en el README)."""
+    cambios: dict[str, dict] = {}
+    for c in cargar_celdas():
+        valor = leer(vcev, c["campo"])
+        if valor is None and c["valor_plantilla"] is None:
+            continue
+        cambios.setdefault(c["hoja"], {})[c["celda"]] = valor
+    return xlsm_xml.escribir_libro(plantilla, destino, cambios)
